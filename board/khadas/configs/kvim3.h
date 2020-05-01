@@ -429,6 +429,7 @@
 #define CONFIG_ANDROID_BOOT_IMAGE 1
 #define CONFIG_ANDROID_IMG 1
 #define CONFIG_SYS_BOOTM_LEN (64<<20) /* Increase max gunzip size*/
+#define CONFIG_ZIRCON_BOOT_IMAGE 1
 
 /* cpu */
 #define CONFIG_CPU_CLK					1200 //MHz. Range: 360-2000, should be multiple of 24

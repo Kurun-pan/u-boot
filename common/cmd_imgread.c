@@ -23,6 +23,7 @@ Description:
 #include <amlogic/storage_if.h>
 #include <image.h>
 #include <android_image.h>
+#include <zircon/image.h>
 #include <asm/arch/bl31_apis.h>
 #include <asm/arch/secure_apb.h>
 #include <libfdt.h>
@@ -333,33 +334,43 @@ static int do_image_read_kernel(cmd_tbl_t *cmdtp, int flag, int argc, char * con
 	if (!nCheckOffset)
     {
         genFmt = genimg_get_format(hdr_addr);
-	    if (IMAGE_FORMAT_ANDROID != genFmt) {
-            errorP("Fmt unsupported!genFmt 0x%x != 0x%x\n", genFmt, IMAGE_FORMAT_ANDROID);
+        if (IMAGE_FORMAT_ANDROID != genFmt && genFmt != IMAGE_FORMAT_ZIRCON) {
+            errorP("Fmt unsupported!genFmt 0x%x != 0x%x or 0x%x\n", genFmt, IMAGE_FORMAT_ANDROID, IMAGE_FORMAT_ZIRCON);
             return __LINE__;
         }
     }
 
     //Check if encrypted image
-    rc = _aml_get_secure_boot_kernel_size(loadaddr, &secureKernelImgSz);
-    if (rc) {
-            errorP("Fail in _aml_get_secure_boot_kernel_size, rc=%d\n", rc);
-            return __LINE__;
+    if (genFmt == IMAGE_FORMAT_ANDROID) {
+        rc = _aml_get_secure_boot_kernel_size(loadaddr, &secureKernelImgSz);
+        if (rc) {
+                errorP("Fail in _aml_get_secure_boot_kernel_size, rc=%d\n", rc);
+                return __LINE__;
+        }
+        if (secureKernelImgSz)
+        {
+            actualBootImgSz = secureKernelImgSz + nCheckOffset;
+            MsgP("secureKernelImgSz=0x%x\n", actualBootImgSz);
+        }
+        else
+        {
+            kernel_size     =(hdr_addr->kernel_size + (hdr_addr->page_size-1)+hdr_addr->page_size)&(~(hdr_addr->page_size -1));
+            ramdisk_size    =(hdr_addr->ramdisk_size + (hdr_addr->page_size-1))&(~(hdr_addr->page_size -1));
+            dtbSz           = hdr_addr->second_size;
+            actualBootImgSz = kernel_size + ramdisk_size + dtbSz;
+            debugP("kernel_size 0x%x, page_size 0x%x, totalSz 0x%x\n", hdr_addr->kernel_size, hdr_addr->page_size, kernel_size);
+            debugP("ramdisk_size 0x%x, totalSz 0x%x\n", hdr_addr->ramdisk_size, ramdisk_size);
+            debugP("dtbSz 0x%x, Total actualBootImgSz 0x%x\n", dtbSz, actualBootImgSz);
+        }
     }
-    if (secureKernelImgSz)
-    {
-        actualBootImgSz = secureKernelImgSz + nCheckOffset;
-        MsgP("secureKernelImgSz=0x%x\n", actualBootImgSz);
-    }
-    else
-    {
-        kernel_size     =(hdr_addr->kernel_size + (hdr_addr->page_size-1)+hdr_addr->page_size)&(~(hdr_addr->page_size -1));
-        ramdisk_size    =(hdr_addr->ramdisk_size + (hdr_addr->page_size-1))&(~(hdr_addr->page_size -1));
-        dtbSz           = hdr_addr->second_size;
-        actualBootImgSz = kernel_size + ramdisk_size + dtbSz;
-        debugP("kernel_size 0x%x, page_size 0x%x, totalSz 0x%x\n", hdr_addr->kernel_size, hdr_addr->page_size, kernel_size);
-        debugP("ramdisk_size 0x%x, totalSz 0x%x\n", hdr_addr->ramdisk_size, ramdisk_size);
-        debugP("dtbSz 0x%x, Total actualBootImgSz 0x%x\n", dtbSz, actualBootImgSz);
-    }
+    else if (genFmt == IMAGE_FORMAT_ZIRCON) {
+    	const zbi_header_t *zbi = (zbi_header_t*)hdr_addr;
+		actualBootImgSz = zbi->length + sizeof(*zbi);
+	}
+	else {
+        errorP("Fmt unsupported!genFmt 0x%x != 0x%x or 0x%x\n", genFmt, IMAGE_FORMAT_ANDROID, IMAGE_FORMAT_ZIRCON);
+        return __LINE__;
+	}
 
     if (actualBootImgSz > IMG_PRELOAD_SZ)
     {
@@ -682,7 +693,7 @@ U_BOOT_CMD(
    "Read the image from internal flash with actual size",           //description
    "    argv: <imageType> <part_name> <loadaddr> \n"   //usage
    "    - <image_type> Current support is kernel/res(ource).\n"
-   "imgread kernel  --- Read image in fomart IMAGE_FORMAT_ANDROID\n"
+   "imgread kernel  --- Read image in format IMAGE_FORMAT_ANDROID or IMAGE_FORMAT_ZIRCON\n"
    "imgread dtb     --- Read dtb in fomart IMAGE_FORMAT_ANDROID\n"
    "imgread res     --- Read image packed by 'Amlogic resource packer'\n"
    "imgread pic     --- Read one picture from Amlogic logo"
